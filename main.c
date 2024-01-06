@@ -199,23 +199,16 @@ Rank3 christoffel_at_point(Rank2_field *Field, Rank1 P)
     return res;
 }
 
-void particle_init(Particle_2d *particle)
+void particle_init(Particle_2d *particle, const char* filename)
 {
-    printf("Enter particle x: ");
-    scanf("%lf", &particle->pos.x);
-    /*
-    particle->pos.x = 0.5;
-    */
+    FILE *const file = fopen(filename, "r");
 
-    particle->pos.y = 0.0;
-    /*
-    printf("Enter particle y: ");
-    scanf("%lf", &particle->pos.y);
-    */
+    fscanf(file, "%lf %lf", &particle->pos.x, &particle->pos.y);
+    fscanf(file, "%lf %lf", &particle->vel.x, &particle->vel.y);
 
-    particle->vel.x = 0.01;
-    particle->vel.y = 0.00;
     particle->time = 0;
+
+    fclose(file);
 }
 
 void move_particle(Rank2_field *Field, Particle_2d *particle)
@@ -253,11 +246,17 @@ void move_particle(Rank2_field *Field, Particle_2d *particle)
     particle->time += ds;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+    if (argc != 3)
+    {
+        printf("Usage:\n");
+        printf("\tgrav [input_file] [output_file]\n");
+        return -1;
+    }
+
     Rank2_field metric_field;
     Particle_2d tester;
-
 
     Rank2_field *Field = &metric_field;
     memset(Field, 0, sizeof(Rank2_field));
@@ -266,18 +265,20 @@ int main()
 
     Particle_2d *particle = &tester;
     memset(particle, 0, sizeof(Particle_2d));
-    particle_init(particle);
+    particle_init(particle, argv[1]);
 
-    printf("Init particle state:\n");
-    printf("pos = (%.4lf\t%.4lf)\n", particle->pos.x, particle->pos.y);
-    printf("vel = (%.4lf\t%.4lf)\n\n", particle->vel.x, particle->vel.y);
-    for (int i = 0; i < 200; i++)
+    FILE *out = fopen(argv[2], "w");
+    fprintf(out, "%lf\t%lf\t%lf\t%lf\t%lf\n", particle->time,
+            particle->pos.x, particle->pos.y,
+            particle->vel.x, particle->vel.y);
+    for (int i = 0; i < 100; i++)
     {
         move_particle(Field, particle);
-        printf("time = %.2lf\n", particle->time);
-        printf("pos = (%.4lf\t%.4lf)\n", particle->pos.x, particle->pos.y);
-        printf("vel = (%.4lf\t%.4lf)\n\n", particle->vel.x, particle->vel.y);
+        fprintf(out, "%lf\t%lf\t%lf\t%lf\t%lf\n", particle->time,
+                particle->pos.x, particle->pos.y,
+                particle->vel.x, particle->vel.y);
     }
+    fclose(out);
 
     delete_field(Field);
 
