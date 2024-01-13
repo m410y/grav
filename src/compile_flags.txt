@@ -1,0 +1,4 @@
+-Iinclude
+-Itest
+-Wall
+-Wextra
