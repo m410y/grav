@@ -5,8 +5,8 @@ static Rank1 particle_acceleration(Metric_field *field, const Rank1 *P, const Ra
     int i, j, k;
     Rank3 christ;
     Rank1 du;
-    
-    christ = christoffel_at_point(field, *P);
+
+    christ = field_christoffel_at_point(field, *P);
     du.x = 0.0;
     du.y = 0.0;
     for (i = 0; i < 2; i++)
@@ -14,7 +14,7 @@ static Rank1 particle_acceleration(Metric_field *field, const Rank1 *P, const Ra
             for (k = 0; k < 2; k++)
                 PTR_CAST(du)[i] -=
                     PTR_CAST(christ)[4 * i + 2 * j + k] *
-                    PTR_CAST(V)[j] * PTR_CAST(V)[k];
+                    PTR_CAST(*V)[j] * PTR_CAST(*V)[k];
 
     return du;
 }
@@ -48,8 +48,8 @@ void move_particle(Particle *particle, Metric_field *field, double ds)
 
     P = particle->pos;
     V = particle->vel;
-    for (i = 0; i < 4; i++)
-        for (j = 0; j < 2; j++)
+    for (j = 0; j < 2; j++)
+        for (i = 0; i < 4; i++)
         {
             PTR_CAST(P)[j] += PTR_CAST(dP[i])[j] * coeff2[i] * ds;
             PTR_CAST(V)[j] += PTR_CAST(dV[i])[j] * coeff2[i] * ds;

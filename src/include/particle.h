@@ -7,7 +7,7 @@ typedef struct particle Particle;
 struct particle {
     Rank1 pos;
     Rank1 vel;
-    double time;
+    Rank0 time;
 };
 
 void move_particle(Particle *particle, Metric_field *field, double ds);

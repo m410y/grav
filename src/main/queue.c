@@ -4,19 +4,19 @@
 
 void queue_free(Queue *queue)
 {
-    Queue to_free;
+    Queue to_free, end;
 
     if (!(*queue))
         return;
 
-    while ((*queue)->next != (*queue))
+    end = *queue;
+    do
     {
         to_free = *queue;
         *queue = to_free->next;
         free(to_free);
-    }
+    } while (*queue != end);
 
-    free(*queue);
     *queue = NULL;
 }
 
@@ -34,6 +34,9 @@ int queue_push(Queue *queue, void *data)
     {
         new_elem->next = *queue;
         new_elem->prev = (*queue)->prev;
+
+        new_elem->next->prev = new_elem;
+        new_elem->prev->next = new_elem;
     }
     else
         new_elem->next = new_elem->prev = new_elem;

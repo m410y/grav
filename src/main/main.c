@@ -11,7 +11,7 @@ Rank2 metric(Rank1 point)
 {
     const double x = point.x - 0.5;
     const double y = point.y - 0.5;
-    const double z = 10 * exp(-(x * x + y * y) / 2);
+    const double z = 1000 * exp(-(x * x + y * y) / 2);
     const Rank2 metric = {
         .x.x = 1 + x * x * z,
         .x.y = x * y * z,
@@ -45,7 +45,7 @@ int main()
     Metric_field field;
     Particle tester;
 
-    in = fopen("resources/input.txt", "r");
+    in = fopen("../resources/input.txt", "r");
     fscanf(in, "%d", &max_i);
     fscanf(in, "%lf", &step);
     fscanf(in, "%lu%lu", &Nx, &Ny);
@@ -60,7 +60,7 @@ int main()
     particle_init(&tester, in);
     fclose(in);
 
-    out = fopen("resources/output.txt", "w");
+    out = fopen("../resources/output.txt", "w");
     particle_log(&tester, out);
     for (i = 0; i < max_i; i++)
     {

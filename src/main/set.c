@@ -99,6 +99,10 @@ void set_free(Set *set)
         list_free((List *)&set->table[i]);
 
     free(set->table);
+
+    set->table = NULL;
+    set->size = 0;
+    set->elems = 0;
 }
 
 int set_contain(const Set *set, void *data)

@@ -7,96 +7,13 @@
 #include <string.h>
 #include <stdio.h>
 
-int field_alloc(Metric_field *field, size_t Nx, size_t Ny)
-{
-    Rank1 *verts;
-    Face **faces;
-    size_t i, j, k;
-
-    verts = malloc((Nx + 1) * (Ny + 1) * sizeof(Rank1));
-    if (!verts)
-        return -1;
-
-    for (i = 0; i <= Ny; i++)
-        for (j = 0; j <= Nx; j++)
-        {
-            verts[j].x = (double)j / Nx;
-            verts[(Nx + 1) * i].y = (double)i / Ny;
-        }
-
-    faces = malloc(2 * Nx * Ny * sizeof(Face));
-    for (i = 0; i < Ny; i++)
-        for (j = 0; j < Nx; j++)
-        {
-            k = 2 * (i * Nx + j);
-
-            faces[k] = malloc(sizeof(Face));
-            faces[k + 1] = malloc(sizeof(Face));
-
-            memset(faces[k], 0, sizeof(Face));
-            memset(faces[k + 1], 0, sizeof(Face));
-
-            faces[k]->near[0] = faces[k + 1];
-            faces[k + 1]->near[0] = faces[k];
-
-            if (j != 0)
-            {
-                faces[k + 1]->near[1] = faces[k - 1];
-                faces[k - 1]->near[2] = faces[k + 1];
-            }
-
-            if (i != 0)
-            {
-                faces[k]->near[1] = faces[k - 2 * Nx];
-                faces[k - 2 * Nx]->near[2] = faces[k];
-            }
-
-            faces[k]->vert[0] = faces[k + 1]->vert[0] =
-                &verts[(Nx + 1) * i + j];
-            faces[k]->vert[1] = faces[k + 1]->vert[1] =
-                &verts[(Nx + 1) * (i + 1) + (j + 1)];
-            faces[k]->vert[2] = &verts[(Nx + 1) * i + (j + 1)];
-            faces[k + 1]->vert[2] = &verts[(Nx + 1) * (i + 1) + j];
-        }
-
-    field->f = faces[0];
-    field->vertices = verts;
-
-    free(faces);
-
-    return 0;
-}
-
-void field_delete(Metric_field *field)
-{
-    int i;
-    Set used;
-    List list;
-    Face *face;
-
-    set_init(&used);
-    list = NULL;
-
-    set_add(&used, field->f);
-    list_push(&list, field->f);
-    while (list)
-    {
-        face = list_pop(&list);
-        for (i = 0; i < 3; i++)
-        {
-            if (!face->near[i])
-                continue;
-
-            if (set_add(&used, face->near[i]) == 0)
-                list_push(&list, face->near[i]);
-        }
-
-        free(face);
-    }
-
-    set_free(&used);
-    list_free(&list);
-}
+typedef struct face Face;
+struct face {
+    Face *near[3];
+    Rank1 *vert[3];
+    Rank2 metric;
+    Rank3 d_metric;
+};
 
 static void face_field_approx(Face *face, metric_func func)
 {
@@ -104,7 +21,7 @@ static void face_field_approx(Face *face, metric_func func)
     double areas[3];
     double y_diff[3];
     double x_diff[3];
-    double det = 0;
+    double det;
     Rank2 vals[3];
     const Rank1 *p[3] = {
         face->vert[0],
@@ -112,6 +29,7 @@ static void face_field_approx(Face *face, metric_func func)
         face->vert[2],
     };
 
+    det = 0;
     for (i = 0; i < 3; i++)
     {
         j = (i + 1) % 3;
@@ -147,37 +65,6 @@ static void face_field_approx(Face *face, metric_func func)
                 x_diff[i] * PTR_CAST(vals[i])[j];
         }
     }
-}
-
-void field_func_init(Metric_field *field, metric_func func)
-{
-    int i;
-    Set used;
-    List list;
-    Face *face;
-
-    set_init(&used);
-    list = NULL;
-
-    set_add(&used, field->f);
-    list_push(&list, field->f);
-    while (list)
-    {
-        face = list_pop(&list);
-        for (i = 0; i < 3; i++)
-        {
-            if (!face->near[i])
-                continue;
-
-            if (set_add(&used, face->near[i]) == 0)
-                list_push(&list, face->near[i]);
-
-            face_field_approx(face, func);
-        }
-    }
-
-    set_free(&used);
-    list_free(&list);
 }
 
 static double triangle_area(Rank1 *p[3])
@@ -271,12 +158,6 @@ static Rank2 metric_at_point_nocheck(const Face *face, const Rank1 *P)
     return res;
 }
 
-Rank2 metric_at_point(Metric_field *field, Rank1 P)
-{
-    const Face *face = field_face_at_point(field, &P);
-    return metric_at_point_nocheck(face, &P);
-}
-
 static Rank2 inverse(const Rank2 *M)
 {
     const double det = M->x.x * M->y.y - M->x.y * M->y.x;
@@ -290,13 +171,170 @@ static Rank2 inverse(const Rank2 *M)
     return res;
 }
 
-Rank3 christoffel_at_point(Metric_field *field, Rank1 P)
+int field_alloc(Metric_field *field, int Nx, int Ny)
 {
+    Rank1 *verts;
+    Face **faces;
     int i, j, k;
+
+    verts = malloc((Nx + 1) * (Ny + 1) * sizeof(Rank1));
+    if (!verts)
+        return -1;
+
+    for (i = 0; i <= Ny; i++)
+        for (j = 0; j <= Nx; j++)
+        {
+            k = (Nx + 1) * i + j;
+            verts[k].x = (double)j / Nx;
+            verts[k].y = (double)i / Ny;
+        }
+
+    faces = malloc(2 * Nx * Ny * sizeof(Face));
+    if (!faces)
+    {
+        free(verts);
+        return -1;
+    }
+
+    for (i = 0; i < Ny; i++)
+        for (j = 0; j < Nx; j++)
+        {
+            k = 2 * (i * Nx + j);
+
+            faces[k] = malloc(sizeof(Face));
+            faces[k + 1] = malloc(sizeof(Face));
+            if (!faces[k] || !faces[k + 1])
+            {
+                i = Ny;
+                j = faces[k] ? k + 1 : k;
+                break;
+            }
+
+            memset(faces[k], 0, sizeof(Face));
+            memset(faces[k + 1], 0, sizeof(Face));
+
+            faces[k]->near[0] = faces[k + 1];
+            faces[k + 1]->near[0] = faces[k];
+
+            if (j != 0)
+            {
+                faces[k + 1]->near[1] = faces[k - 2];
+                faces[k - 2]->near[1] = faces[k + 1];
+            }
+
+            if (i != 0)
+            {
+                faces[k]->near[2] = faces[k - 2 * Nx + 1];
+                faces[k - 2 * Nx + 1]->near[2] = faces[k];
+            }
+
+            faces[k]->vert[0] = &verts[(Nx + 1) * i + j];
+            faces[k]->vert[1] = &verts[(Nx + 1) * i + (j + 1)];
+            faces[k]->vert[2] = &verts[(Nx + 1) * (i + 1) + (j + 1)];
+
+            faces[k + 1]->vert[0] = &verts[(Nx + 1) * i + j];
+            faces[k + 1]->vert[1] = &verts[(Nx + 1) * (i + 1) + (j + 1)];
+            faces[k + 1]->vert[2] = &verts[(Nx + 1) * (i + 1) + j];
+        }
+
+    if (!faces[k] || !faces[k + 1])
+    {
+        for (i = j; i >= 0; i--)
+            free(faces[i]);
+
+        free(faces);
+        free(verts);
+        return -1;
+    }
+
+    field->f = faces[Nx * Ny];
+    field->vertices = verts;
+
+    free(faces);
+    return 0;
+}
+
+void field_delete(Metric_field *field)
+{
+    int i;
+    Set used;
+    List list;
+    Face *face;
+
+    set_init(&used);
+    list = NULL;
+
+    set_add(&used, field->f);
+    list_push(&list, field->f);
+    while (list)
+    {
+        face = list_pop(&list);
+        for (i = 0; i < 3; i++)
+        {
+            if (!face->near[i])
+                continue;
+
+            if (set_add(&used, face->near[i]) == 0)
+                list_push(&list, face->near[i]);
+        }
+
+        free(face);
+    }
+
+    set_free(&used);
+    list_free(&list);
+
+    free(field->vertices);
+
+    field->f = NULL;
+    field->vertices = NULL;
+}
+
+void field_func_init(Metric_field *field, metric_func func)
+{
+    int i;
+    Set used;
+    List list;
+    Face *face;
+
+    set_init(&used);
+    list = NULL;
+
+    set_add(&used, field->f);
+    list_push(&list, field->f);
+    while (list)
+    {
+        face = list_pop(&list);
+        for (i = 0; i < 3; i++)
+        {
+            if (!face->near[i])
+                continue;
+
+            if (set_add(&used, face->near[i]) == 0)
+                list_push(&list, face->near[i]);
+
+            face_field_approx(face, func);
+        }
+    }
+
+    set_free(&used);
+    list_free(&list);
+}
+
+Rank2 field_metric_at_point(Metric_field *field, Rank1 P)
+{
     const Face *face = field_face_at_point(field, &P);
+    return metric_at_point_nocheck(face, &P);
+}
+
+Rank3 field_christoffel_at_point(Metric_field *field, Rank1 P)
+{
+    Face *face;
+    int i, j, k;
     Rank2 inv;
     Rank3 comb, res;
 
+    face = field_face_at_point(field, &P);
     for (i = 0; i < 2; i++)
         for (j = 0; j < 2; j++)
             for (k = 0; k < 2; k++)
