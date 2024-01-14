@@ -11,60 +11,89 @@ typedef struct face Face;
 struct face {
     Face *near[3];
     Rank1 *vert[3];
-    Rank2 metric;
-    Rank3 d_metric;
+    Rank2 appr[6];
 };
+
+static void gauss_sol_nocheck(int n, int m, double M[n][m])
+{
+    int i, j, k;
+    double temp;
+
+    for (i = 0; i < n; i++)
+    {
+        if (M[i][i] == 0.0)
+        {
+            for (k = i + 1; M[k][i] == 0.0; k++)
+                ;
+
+            for (int j = i; j < m; j++)
+            {
+                temp = M[i][j];
+                M[i][j] = M[k][j];
+                M[k][j] = temp;
+            }
+        }
+
+        temp = 1.0 / M[i][i];
+        for (j = i; j < m; j++)
+            M[i][j] *= temp;
+
+        for (k = i + 1; k < n; k++)
+        {
+            temp = M[k][i];
+            for (j = i; j < m; j++)
+                M[k][j] -= M[i][j] * temp;
+        }
+    }
+
+    for (i = n - 1; i > 0; i--)
+    {
+        for (k = i - 1; k >= 0; k--)
+        {
+            temp = M[k][i];
+            for (j = i; j < m; j++)
+                M[k][j] -= M[i][j] * temp;
+        }
+    }
+}
 
 static void face_field_approx(Face *face, metric_func func)
 {
     int i, j, k;
-    double areas[3];
-    double y_diff[3];
-    double x_diff[3];
-    double det;
-    Rank2 vals[3];
-    const Rank1 *p[3] = {
-        face->vert[0],
-        face->vert[1],
-        face->vert[2],
-    };
+    double mat[6][10];
+    Rank1 p[6];
+    Rank2 g;
 
-    det = 0;
     for (i = 0; i < 3; i++)
     {
         j = (i + 1) % 3;
         k = (j + 1) % 3;
 
-        areas[i] = p[j]->x * p[k]->y - p[k]->x * p[j]->y;
-        y_diff[i] = p[j]->y - p[k]->y;
-        x_diff[i] = p[k]->x - p[j]->x;
-
-        det += areas[i];
-
-        vals[i] = func(*p[i]);
+        p[i] = *(face->vert[i]);
+        p[3 + k].x = 0.5 * (face->vert[j]->x + face->vert[k]->x);
+        p[3 + k].y = 0.5 * (face->vert[j]->y + face->vert[k]->y);
     }
 
-    memset(&face->metric, 0, sizeof(face->metric));
-    memset(&face->d_metric, 0, sizeof(face->d_metric));
-
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < 6; i++)
     {
-        areas[i] /= det;
-        y_diff[i] /= det;
-        x_diff[i] /= det;
+        g = func(p[i]);
+
+        mat[i][0] = 1.0;
+        mat[i][1] = p[i].x;
+        mat[i][2] = p[i].y;
+        mat[i][3] = p[i].x * p[i].x;
+        mat[i][4] = p[i].x * p[i].y;
+        mat[i][5] = p[i].y * p[i].y;
 
         for (j = 0; j < 4; j++)
-        {
-            PTR_CAST(face->metric)[j] +=
-                areas[i] * PTR_CAST(vals[i])[j];
-
-            PTR_CAST(face->d_metric.x)[j] +=
-                y_diff[i] * PTR_CAST(vals[i])[j];
-
-            PTR_CAST(face->d_metric.y)[j] +=
-                x_diff[i] * PTR_CAST(vals[i])[j];
-        }
+            PTR_CAST(mat[i][6])[j] = PTR_CAST(g)[j];
     }
+
+    gauss_sol_nocheck(6, 10, mat);
+
+    for (i = 0; i < 6; i++)
+        for (j = 0; j < 4; j++)
+            PTR_CAST(face->appr[i])[j] = mat[i][6 + j];
 }
 
 static double triangle_area(Rank1 *p[3])
@@ -146,13 +175,35 @@ static Face * field_face_at_point(Metric_field *field, Rank1 *P)
 static Rank2 metric_at_point_nocheck(const Face *face, const Rank1 *P)
 {
     int i;
-    Rank2 res;
+    Rank2 res = {};
 
-    res = face->metric;
     for (i = 0; i < 4; i++)
     {
-        PTR_CAST(res)[i] += PTR_CAST(face->d_metric.x)[i] * P->x;
-        PTR_CAST(res)[i] += PTR_CAST(face->d_metric.y)[i] * P->y;
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[0])[i];
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[1])[i] * P->x;
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[2])[i] * P->y;
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[3])[i] * P->x * P->x;
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[4])[i] * P->x * P->y;
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[5])[i] * P->y * P->y;
+    }
+
+    return res;
+}
+
+static Rank3 diff_at_point_nocheck(const Face *face, const Rank1 *P)
+{
+    int i;
+    Rank3 res = {};
+
+    for (i = 0; i < 4; i++)
+    {
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[1])[i];
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[3])[i] * 2.0 * P->x;
+        PTR_CAST(res)[i] += PTR_CAST(face->appr[4])[i] * P->y;
+
+        PTR_CAST(res)[4 + i] += PTR_CAST(face->appr[2])[i];
+        PTR_CAST(res)[4 + i] += PTR_CAST(face->appr[4])[i] * P->x;
+        PTR_CAST(res)[4 + i] += PTR_CAST(face->appr[5])[i] * 2.0 * P->y;
     }
 
     return res;
@@ -332,16 +383,17 @@ Rank3 field_christoffel_at_point(Metric_field *field, Rank1 P)
     Face *face;
     int i, j, k;
     Rank2 inv;
-    Rank3 comb, res;
+    Rank3 comb, res, diff;
 
     face = field_face_at_point(field, &P);
+    diff = diff_at_point_nocheck(face, &P);
     for (i = 0; i < 2; i++)
         for (j = 0; j < 2; j++)
             for (k = 0; k < 2; k++)
                 PTR_CAST(comb)[4 * i + 2 * j + k] = 0.5 * (
-                    PTR_CAST(face->d_metric)[4 * k + 2 * i + j] +
-                    PTR_CAST(face->d_metric)[4 * j + 2 * i + k] -
-                    PTR_CAST(face->d_metric)[4 * i + 2 * j + k]);
+                    PTR_CAST(diff)[4 * k + 2 * i + j] +
+                    PTR_CAST(diff)[4 * j + 2 * i + k] -
+                    PTR_CAST(diff)[4 * i + 2 * j + k]);
 
     inv = metric_at_point_nocheck(face, &P);
     inv = inverse(&inv);

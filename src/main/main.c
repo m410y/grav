@@ -7,10 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-Rank2 metric(Rank1 point)
+Rank2 metric(Rank1 p)
 {
-    const double x = point.x - 0.5;
-    const double y = point.y - 0.5;
+    const double x = p.x - 0.5;
+    const double y = p.y - 0.5;
     const double z = 1000 * exp(-(x * x + y * y) / 2);
     const Rank2 metric = {
         .x.x = 1 + x * x * z,

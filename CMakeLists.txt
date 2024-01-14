@@ -24,5 +24,6 @@ if (Check_FOUND)
     target_link_libraries(unit_tests PUBLIC
         check
         particle
+        m
     )
 endif()
