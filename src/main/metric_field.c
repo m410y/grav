@@ -1,3 +1,4 @@
+#include "tensor_deifnes.h"
 #include <metric_field.h>
 #include <set.h>
 #include <queue.h>
@@ -209,6 +210,22 @@ static Rank3 diff_at_point_nocheck(const Face *face, const Rank1 *P)
     return res;
 }
 
+static Rank4 second_at_point_nocheck(const Face *face)
+{
+    int i;
+    Rank4 res = {};
+
+    for (i = 0; i < 4; i++)
+    {
+        PTR_CAST(res)[4*0 + i] += PTR_CAST(face->appr[3])[i] * 2.0;
+        PTR_CAST(res)[4*1 + i] += PTR_CAST(face->appr[4])[i];
+        PTR_CAST(res)[4*2 + i] += PTR_CAST(face->appr[4])[i];
+        PTR_CAST(res)[4*3 + i] += PTR_CAST(face->appr[5])[i] * 2.0;
+    }
+
+    return res;
+}
+
 static Rank2 inverse(const Rank2 *M)
 {
     const double det = M->x.x * M->y.y - M->x.y * M->y.x;
@@ -383,26 +400,101 @@ Rank3 field_christoffel_at_point(Metric_field *field, Rank1 P)
     Face *face;
     int i, j, k;
     Rank2 inv;
-    Rank3 comb, res, diff;
+    Rank3 comb, diff;
+    Rank3 res = {};
 
     face = field_face_at_point(field, &P);
+
     diff = diff_at_point_nocheck(face, &P);
+    inv = metric_at_point_nocheck(face, &P);
+    inv = inverse(&inv);
+
     for (i = 0; i < 2; i++)
         for (j = 0; j < 2; j++)
             for (k = 0; k < 2; k++)
-                PTR_CAST(comb)[4 * i + 2 * j + k] = 0.5 * (
-                    PTR_CAST(diff)[4 * k + 2 * i + j] +
-                    PTR_CAST(diff)[4 * j + 2 * i + k] -
-                    PTR_CAST(diff)[4 * i + 2 * j + k]);
+                PTR_CAST(comb)[4*i + 2*j + k] = 0.5 * (
+                    PTR_CAST(diff)[4*k + 2*i + j] +
+                    PTR_CAST(diff)[4*j + 2*i + k] -
+                    PTR_CAST(diff)[4*i + 2*j + k]);
 
-    inv = metric_at_point_nocheck(face, &P);
-    inv = inverse(&inv);
-    memset(&res, 0, sizeof(Rank3));
     for (i = 0; i < 4; i++)
         for (j = 0; j < 2; j++)
             for (k = 0; k < 2; k++)
-            PTR_CAST(res)[4 * j + i] +=
-                PTR_CAST(inv)[2 * j + k] * PTR_CAST(comb)[4 * k + i];
+                PTR_CAST(res)[4 * j + i] +=
+                    PTR_CAST(inv)[2*j + k] * PTR_CAST(comb)[4*k + i];
+
+    return res;
+}
+
+Rank4 field_riemann_at_point(Metric_field *field, Rank1 P)
+{
+    int i, j, k, l, m, idx;
+    Face *face;
+    Rank2 inv;
+    Rank3 christ;
+    Rank4 diff;
+    double temp;
+    Rank4 res = {};
+
+    face = field_face_at_point(field, &P);
+
+    christ = field_christoffel_at_point(field, P);
+    diff = second_at_point_nocheck(face);
+    inv = metric_at_point_nocheck(face, &P);
+    inv = inverse(&inv);
+
+    temp = diff.x.y.x.y - 0.5*(diff.x.x.y.y + diff.y.y.x.x);
+    for (i = 0; i < 2; i++)
+        for (j = 0; j < 2; j++)
+            for (k = 0; k < 2; k++)
+            {
+                m = (j + 1) % 2;
+                l = (k + 1) % 2;
+
+                idx = 8*i + 4*j + 2*k + l;
+                PTR_CAST(res)[idx] =
+                    (j ? temp : -temp) * PTR_CAST(inv)[2*i + m];
+
+                for (m = 0; m < 2; m++)
+                {
+                    PTR_CAST(res)[idx] +=
+                        PTR_CAST(christ)[4*i + 2*k + m] *
+                        PTR_CAST(christ)[4*m + 2*j + l] -
+                        PTR_CAST(christ)[4*i + 2*l + m] *
+                        PTR_CAST(christ)[4*m + 2*j + k];
+                }
+            }
+
+    return res;
+}
+
+Rank2 field_ricci_at_point(Metric_field *field, Rank1 P)
+{
+    int i, j, k;
+    Rank4 riemann;
+    Rank2 res = {};
+
+    riemann = field_riemann_at_point(field, P);
+    for (i = 0; i < 2; i++)
+        for (j = 0; j < 2; j++)
+            for (k = 0; k < 2; k++)
+                PTR_CAST(res)[2*i + j] += PTR_CAST(riemann)[8*k + 4*i + 2*k + j];
+
+    return res;
+}
+
+Rank0 field_curavture_at_point(Metric_field *field, Rank1 P)
+{
+    int i;
+    Rank2 ricci, inv;
+    Rank0 res = 0;
+
+    ricci = field_ricci_at_point(field, P);
+    inv = field_metric_at_point(field, P);
+    inv = inverse(&inv);
+
+    for (i = 0; i < 4; i++)
+        res += PTR_CAST(ricci)[i] * PTR_CAST(inv)[i];
 
     return res;
 }
