@@ -279,6 +279,17 @@ static Rank3 christ(Rank1 p)
     return res;
 }
 
+static Rank0 curvature(Rank1 p)
+{
+    double det;
+    double res;
+
+    det = 1.0 + p.x*p.x + p.y*p.y;
+    res = (2.0 - det) / det / det;
+
+    return res;
+}
+
 static Particle movement(const Particle *p, double ds)
 {
     double c1, c2;
@@ -406,6 +417,24 @@ START_TEST (mfield_christ_test)
 }
 END_TEST
 
+START_TEST (mfield_curvature_test)
+{
+    const Rank1 p = {
+        0.5, 0.5,
+    };
+    const Rank0 ans = curvature(p);
+    Metric_field field;
+    Rank0 res;
+
+    field_alloc(&field, 10, 10);
+    field_func_init(&field, &metric);
+    res = field_curavture_at_point(&field, p);
+    ck_assert_double_ge(res, ans - eps);
+    ck_assert_double_le(res, ans + eps);
+    field_delete(&field);
+}
+END_TEST
+
 START_TEST (particle_move_test)
 {
     int i;
@@ -464,6 +493,7 @@ Suite * grav_suite(void)
     tcase_add_test(tc_mfield, mfield_init_test);
     tcase_add_test(tc_mfield, mfield_metric_test);
     tcase_add_test(tc_mfield, mfield_christ_test);
+    tcase_add_test(tc_mfield, mfield_curvature_test);
 
     tc_particle = tcase_create("Metric_field");
     tcase_add_test(tc_particle, particle_move_test);
