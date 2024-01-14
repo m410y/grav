@@ -38,8 +38,8 @@ void move_particle(Particle *particle, Metric_field *field, double ds)
         if (coeff1[i] != 0.0)
             for (j = 0; j < 2; j++)
             {
-                PTR_CAST(P)[j] += PTR_CAST(dP[i])[j] * coeff1[i] * ds;
-                PTR_CAST(V)[j] += PTR_CAST(dV[i])[j] * coeff1[i] * ds;
+                PTR_CAST(P)[j] += PTR_CAST(dP[i - 1])[j] * coeff1[i] * ds;
+                PTR_CAST(V)[j] += PTR_CAST(dV[i - 1])[j] * coeff1[i] * ds;
             }
 
         dP[i] = V;

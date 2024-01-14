@@ -1,14 +1,14 @@
-#include "metric_field.h"
-#ifdef UNIT_TESTS
-
 #include <check.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include <list.h>
 #include <queue.h>
 #include <set.h>
 #include <metric_field.h>
 #include <particle.h>
+
+static const double eps = 1e-6;
 
 START_TEST (list_heap_test)
 {
@@ -266,6 +266,67 @@ static Rank2 metric(Rank1 p)
     return res;
 }
 
+static Rank3 christ(Rank1 p)
+{
+    const Rank3 res = {
+        {{p.x/(1.0 + p.x*p.x + p.y*p.y), 0.0},
+         {0.0, p.x/(1.0 + p.x*p.x + p.y*p.y)}},
+
+        {{p.y/(1.0 + p.x*p.x + p.y*p.y), 0.0},
+         {0.0, p.y/(1.0 + p.x*p.x + p.y*p.y)}},
+    };
+
+    return res;
+}
+
+static Particle movement(const Particle *p, double ds)
+{
+    double c1, c2;
+    double r0, v0, vn;
+    double r, v;
+    double ex, ey;
+    double left_r, right_r, val;
+    Particle res;
+
+    r0 = sqrt(p->pos.x * p->pos.x + p->pos.y * p->pos.y);
+
+    ex = p->pos.x / r0;
+    ey = p->pos.y / r0;
+
+    v0 = p->vel.x * ex + p->vel.y * ey;
+    vn = p->vel.y * ex - p->vel.x * ey;
+
+    c1 = v0 * sqrt(1.0 + r0 * r0);
+    c2 = 0.5 * (asinh(r0) + r0 * sqrt(1.0 + r0 * r0));
+
+    c2 = c1 * ds + c2;
+    left_r = 0;
+    right_r = c2;
+
+    do {
+        r = 0.5 * (left_r + right_r);
+        val = 0.5 * (asinh(r) + r * sqrt(1.0 + r * r));
+
+        if (val > c2)
+            right_r = r;
+        else if (val < c2)
+            left_r = r;
+        else
+            break;
+
+    } while (right_r - left_r > eps);
+
+    v = c1 / sqrt(1.0 + r * r);
+
+    res.pos.x = r * ex;
+    res.pos.y = r * ey;
+    res.vel.x = v * ex - vn * ey;
+    res.vel.y = v * ey + vn * ex;
+    res.time = ds;
+
+    return res;
+}
+
 START_TEST (mfield_heap_test)
 {
     Metric_field *pfield;
@@ -303,14 +364,10 @@ END_TEST
 
 START_TEST (mfield_metric_test)
 {
-    const double eps = 1e-6;
     const Rank1 p = {
         0.5, 0.5,
     };
-    const Rank2 ans = {
-        {1.0 + p.x*p.x, p.x*p.y},
-        {p.x*p.y, 1.0 + p.y*p.y},
-    };
+    const Rank2 ans = metric(p);
     int i;
     Metric_field field;
     Rank2 res;
@@ -329,22 +386,15 @@ END_TEST
 
 START_TEST (mfield_christ_test)
 {
-    const double eps = 1e-2;
     const Rank1 p = {
         0.5, 0.5,
     };
-    const Rank3 ans = {
-        {{p.x/(1.0 + p.x*p.x + p.y*p.y), 0.0},
-         {0.0, p.x/(1.0 + p.x*p.x + p.y*p.y)}},
-
-        {{p.y/(1.0 + p.x*p.x + p.y*p.y), 0.0},
-         {0.0, p.y/(1.0 + p.x*p.x + p.y*p.y)}},
-    };
+    const Rank3 ans = christ(p);
     int i;
     Metric_field field;
     Rank3 res;
 
-    field_alloc(&field, 101, 101);
+    field_alloc(&field, 10, 10);
     field_func_init(&field, &metric);
     res = field_christoffel_at_point(&field, p);
     for (i = 0; i < 8; i++)
@@ -358,7 +408,6 @@ END_TEST
 
 START_TEST (particle_move_test)
 {
-    const double eps = 1e-4;
     int i;
     Metric_field field;
     Particle particle = {
@@ -366,13 +415,9 @@ START_TEST (particle_move_test)
         .vel = {0.1, 0.1},
         .time = 0.0,
     };
-    const Particle ans = {
-        .pos = {0.5 + 0.1, 0.5 + 0.1},
-        .vel = {0.1 - 0.02/3, 0.1 - 0.02/3},
-        .time = 1.0,
-    };
+    const Particle ans = movement(&particle, 1.0);
 
-    field_alloc(&field, 101, 101);
+    field_alloc(&field, 10, 10);
     field_func_init(&field, &metric);
     move_particle(&particle, &field, 1.0);
     for (i = 0; i < 5; i++)
@@ -447,5 +492,3 @@ int main(void)
     srunner_free(sr);
     return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-
-#endif
